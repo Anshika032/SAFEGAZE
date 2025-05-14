@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAFEGAZE - Content Moderation</title>
+	<link rel="shortcut icon" href="web.jpg" type="image/x-icon">
+    <link rel="stylesheet" href="style.css">
+    
+</head>
+<body>
+    <script src="Index.js"></script>
+    <script src="Dashboard.js"></script>
+    <div class="container">
+        <header>
+            <div>
+                <div class="logo">SAFEGAZE<span class="logo-trademark">®</span></div>
+                <div class="logo-subtitle">YOUR GAZE,OUR SHEILD</div>
+            </div>
+            <div class="status-indicators">
+                <div class="status-indicator">
+                    <div class="indicator-dot dot-green"></div>
+                    <div>SYSTEM ONLINE</div>
+                </div>
+                <div class="status-indicator">
+                    <div class="indicator-dot dot-blue"></div>
+                    <div>MONITORING ACTIVE</div>
+                </div>
+            </div>
+        </header>
+
+<h1>AI-Media Moderation</h1>
+    
+    <div class="tab">
+        <!-- <button class="tablinks active" onclick="openTab(event, 'TextTab')">Text Moderation</button> -->
+        <button class="tablinks" onclick="openTab(event, 'ImageTab')">Image Moderation</button>
+        <button class="tablinks" onclick="openTab(event, 'VideoTab')">Video Moderation</button>
+    </div>
+    
+    <!-- Text Moderation Tab
+    <div id="TextTab" class="tabcontent" style="display: block;">
+        <h2>Text Content Moderation</h2>
+        <form id="textModerationForm">
+            <textarea id="contentToModerate" placeholder="Enter text to moderate..."></textarea>
+            <button type="submit" class="submit">Check Text Content</button>
+        </form>
+    </div> -->
+    
+    <!-- Image Moderation Tab -->
+    <div id="ImageTab" class="tabcontent">
+        <h2>Image Moderation</h2>
+        <div id="imageDropArea" class="drop-area">
+            <p>Drag & drop an image here or click to upload</p>
+            <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        </div>
+        <img id="filePreview" alt="Image preview">
+        <button id="checkImageBtn" class="submit" disabled>Check Image Content</button>
+    </div>
+    
+    <!-- Video Moderation Tab -->
+    <div id="VideoTab" class="tabcontent">
+        <h2>Video Moderation</h2>
+        <div id="videoDropArea" class="drop-area">
+            <p>Drag & drop a video here or click to upload</p>
+            <input type="file" id="videoInput" accept="video/*" style="display: none;">
+        </div>
+        <video id="videoPreview" controls></video>
+        <button id="checkVideoBtn" class="submit" disabled>Check Video Content</button>
+    </div>
+    
+    <div class="loader" id="loader"></div>
+    <div id="result"></div>
+    
+    <script>
+        // API configuration
+        const TEXT_API_KEY = "ibbjsjbPCjCGRfdaq8qT9fUErS3Wnvng"; // Replace with your actual API key
+        const TEXT_API_URL = "https://api.openai.com/v1/moderations"; // Example using OpenAI's moderation API
+        
+        const IMAGE_API_KEY = "ibbjsjbPCjCGRfdaq8qT9fUErS3Wnvng"; // Replace with image moderation API key
+        const IMAGE_API_URL = "https://api.sightengine.com/1.0/check.json"; // Replace with image moderation endpoint
+        
+        const VIDEO_API_KEY = "ibbjsjbPCjCGRfdaq8qT9fUErS3Wnvng"; // Replace with video moderation API key
+        const VIDEO_API_URL = "https://api.sightengine.com/1.0/video/check.json"; // Replace with video moderation endpoint
+        
+        // Tab functionality
+        function openTab(evt, tabName) {
+            const tabcontent = document.getElementsByClassName("tabcontent");
+            for (let i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            
+            const tablinks = document.getElementsByClassName("tablinks");
+            for (let i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+        
+        // Text moderation
+        document.getElementById('textModerationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const content = document.getElementById('contentToModerate').value.trim();
+            if (!content) {
+                alert("Please enter some content to moderate.");
+                return;
+            }
+            
+            try {
+                // Show loading state
+                showLoader();
+                
+                // Make API request
+                const response = await fetch(TEXT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${TEXT_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        input: content
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayTextResults(data);
+                
+            } catch (error) {
+                console.error("Error during text moderation:", error);
+                displayError(error.message);
+            } finally {
+                hideLoader();
+            }
+        });
+        
+        // Image moderation setup
+        const imageDropArea = document.getElementById('imageDropArea');
+        const imageInput = document.getElementById('imageInput');
+        const filePreview = document.getElementById('filePreview');
+        const checkImageBtn = document.getElementById('checkImageBtn');
+        
+        imageDropArea.addEventListener('click', () => imageInput.click());
+        
+        imageDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            imageDropArea.classList.add('active');
+        });
+        
+        imageDropArea.addEventListener('dragleave', () => {
+            imageDropArea.classList.remove('active');
+        });
+        
+        imageDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            imageDropArea.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                imageInput.files = e.dataTransfer.files;
+                handleImageFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleImageFile(e.target.files[0]);
+            }
+        });
+        
+        function handleImageFile(file) {
+            if (!file.type.match('image.*')) {
+                alert('Please select an image file.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                filePreview.src = e.target.result;
+                filePreview.style.display = 'block';
+                checkImageBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // Video moderation setup
+        const videoDropArea = document.getElementById('videoDropArea');
+        const videoInput = document.getElementById('videoInput');
+        const videoPreview = document.getElementById('videoPreview');
+        const checkVideoBtn = document.getElementById('checkVideoBtn');
+        
+        videoDropArea.addEventListener('click', () => videoInput.click());
+        
+        videoDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            videoDropArea.classList.add('active');
+        });
+        
+        videoDropArea.addEventListener('dragleave', () => {
+            videoDropArea.classList.remove('active');
+        });
+        
+        videoDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            videoDropArea.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                videoInput.files = e.dataTransfer.files;
+                handleVideoFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        videoInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleVideoFile(e.target.files[0]);
+            }
+        });
+        
+        function handleVideoFile(file) {
+            if (!file.type.match('video.*')) {
+                alert('Please select a video file.');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                videoPreview.src = e.target.result;
+                videoPreview.style.display = 'block';
+                checkVideoBtn.disabled = false;
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        // Image moderation API call
+        checkImageBtn.addEventListener('click', async () => {
+            if (!imageInput.files.length) {
+                alert('Please select an image to moderate.');
+                return;
+            }
+            
+            try {
+                showLoader();
+                const formData = new FormData();
+                formData.append('image', imageInput.files[0]);
+                
+                // Make API request to image moderation service
+                const response = await fetch(IMAGE_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${IMAGE_API_KEY}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayMediaResults(data, 'image');
+                
+            } catch (error) {
+                console.error("Error during image moderation:", error);
+                displayError(error.message);
+            } finally {
+                hideLoader();
+            }
+        });
+        
+        // Video moderation API call
+        checkVideoBtn.addEventListener('click', async () => {
+            if (!videoInput.files.length) {
+                alert('Please select a video to moderate.');
+                return;
+            }
+            
+            try {
+                showLoader();
+                const formData = new FormData();
+                formData.append('video', videoInput.files[0]);
+                
+                // Make API request to video moderation service
+                const response = await fetch(VIDEO_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${VIDEO_API_KEY}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`API request failed with status ${response.status}`);
+                }
+                
+                const data = await response.json();
+                displayMediaResults(data, 'video');
+                
+            } catch (error) {
+                console.error("Error during video moderation:", error);
+                displayError(error.message);
+            } finally {
+                hideLoader();
+            }
+        });
+        
+        // Display functions
+        function displayTextResults(data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            
+            const results = data.results[0];
+            
+            if (results.flagged) {
+                resultDiv.className = 'flagged';
+                
+                let flaggedCategories = [];
+                for (const category in results.categories) {
+                    if (results.categories[category]) {
+                        flaggedCategories.push(category);
+                    }
+                }
+                
+                resultDiv.innerHTML = `
+                    <h3>Text Content Flagged ⚠️</h3>
+                    <p>This content has been flagged for the following reasons:</p>
+                    <ul>
+                        ${flaggedCategories.map(category => `<li>${category}</li>`).join('')}
+                    </ul>
+                    <p>Category scores:</p>
+                    <ul>
+                        ${Object.entries(results.category_scores)
+                            .map(([category, score]) => `<li>${category}: ${score.toFixed(4)}</li>`)
+                            .join('')}
+                    </ul>
+                `;
+            } else {
+                resultDiv.className = 'safe';
+                resultDiv.innerHTML = `
+                    <h3>Text Content Appears Safe ✓</h3>
+                    <p>No content violations were detected.</p>
+                    <p>Category scores:</p>
+                    <ul>
+                        ${Object.entries(results.category_scores)
+                            .map(([category, score]) => `<li>${category}: ${score.toFixed(4)}</li>`)
+                            .join('')}
+                    </ul>
+                `;
+            }
+        }
+        
+        function displayMediaResults(data, mediaType) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            
+            // This is a sample structure - adjust based on your actual API response
+            if (data.flagged) {
+                resultDiv.className = 'flagged';
+                
+                resultDiv.innerHTML = `
+                    <h3>${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} Content Flagged ⚠️</h3>
+                    <p>This ${mediaType} has been flagged for the following reasons:</p>
+                    <ul>
+                        ${data.categories.map(category => `<li>${category.name}: ${category.confidence.toFixed(2)}%</li>`).join('')}
+                    </ul>
+                    ${data.detections ? `
+                    <p>Detected objects/content:</p>
+                    <ul>
+                        ${data.detections.map(detection => `<li>${detection.name} (${detection.confidence.toFixed(2)}%)</li>`).join('')}
+                    </ul>` : ''}
+                `;
+            } else {
+                resultDiv.className = 'safe';
+                resultDiv.innerHTML = `
+                    <h3>${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} Content Appears Safe ✓</h3>
+                    <p>No content violations were detected.</p>
+                    ${data.detections ? `
+                    <p>Detected objects/content:</p>
+                    <ul>
+                        ${data.detections.map(detection => `<li>${detection.name} (${detection.confidence.toFixed(2)}%)</li>`).join('')}
+                    </ul>` : ''}
+                `;
+            }
+        }
+        
+        function displayError(message) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'flagged';
+            resultDiv.innerHTML = `
+                <h3>Error</h3>
+                <p>Something went wrong: ${message}</p>
+                <p>This could be due to an invalid API key, network issue, or service unavailability.</p>
+            `;
+        }
+        
+        function showLoader() {
+            document.getElementById('loader').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+        }
+        
+        function hideLoader() {
+            document.getElementById('loader').style.display = 'none';
+        }
+    </script>
+
+                <div class="main-content">
+                    <div class="sidebar">
+                        <div class="menu-item" data-image="content-reports-img">
+                            <div class="menu-icon">
+                                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDlhMyAzIDAgMSAwIDAgNiAzIDMgMCAwIDAgMC02em0wLTJhNSA1IDAgMSAxIDAgMTAgNSA1IDAgMCAxIDAtMTB6Ii8+PC9zdmc+" alt="Eye">
+                            </div>
+                            <div>Content Uploads</div>
+                            <div class="menu-toggle">▼</div>
+                        </div>
+                        
+                        <div class="menu-item" data-image="content-review-img">
+                            <div class="menu-icon">
+                                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDlhMyAzIDAgMSAwIDAgNiAzIDMgMCAwIDAgMC02em0wLTJhNSA1IDAgMSAxIDAgMTAgNSA1IDAgMCAxIDAtMTB6Ii8+PC9zdmc+" alt="Eye">
+                            </div>
+                            <div>Content Review</div>
+                            <div class="menu-toggle">▼</div>
+                        </div>
+                        
+                        <div class="menu-item" data-image="content-meter-img">
+                            <div class="menu-icon">
+                                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTIwIDEwSDRWOEgyMFYxMFpNNCAyMEgyMFYxOEg0VjIwWk00IDE1SDE2VjEzSDRWMTVaIi8+PC9zdmc+" alt="Meter">
+                            </div>
+                            <div>Content Meter</div>
+                            <div class="menu-toggle">▼</div>
+                        </div>
+                        
+                        <div class="menu-item" data-image="comprehensive-mode-img">
+                            <div class="menu-icon">
+                                <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJDNi40NyAyIDIgNi41IDIgMTJzNC41IDEwIDEwIDEwIDEwLTQuNSAxMC0xMFMxNy41IDIgMTIgMnptNSAxM2gtMTB2LTJoMTB2MnoiLz48L3N2Zz4=" alt="Shield">
+                            </div>
+                            <div>Content Report</div>
+                            <div class="menu-toggle">▼</div>
+                        </div>
+                    </div>
+                    
+                    <div class="content-display">
+                        <h2 class="content-title">Select a menu item to view content</h2>
+                        
+                        <!-- Content Images -->
+                        <img id="content-reports-img" src="violence.jpg" alt="Content Reports" class="content-image">
+                        <img id="content-review-img" src="gr.png" alt="Content Review" class="content-image">
+                        <img id="content-meter-img" src="bar.png" alt="Content Meter" class="content-image">
+                        <img id="comprehensive-mode-img" src="compre.png" alt="Comprehensive Mode" class="content-image">
+                    </div>
+                </div>
+                
+                <script>
+                    // Get all menu items
+                    const menuItems = document.querySelectorAll('.menu-item');
+                    
+                    // Add click event listeners to each menu item
+                    menuItems.forEach(item => {
+                        item.addEventListener('click', function() {
+                            // Get the image ID from the data attribute
+                            const imageId = this.getAttribute('data-image');
+                            
+                            // Hide all images
+                            document.querySelectorAll('.content-image').forEach(img => {
+                                img.classList.remove('active');
+                            });
+                            
+                            // Remove active class from all menu items
+                            menuItems.forEach(menuItem => {
+                                menuItem.classList.remove('active');
+                            });
+                            
+                            // Add active class to clicked menu item
+                            this.classList.add('active');
+                            
+                            // Show the corresponding image
+                            document.getElementById(imageId).classList.add('active');
+                            
+                            // Update the title
+                            const title = this.querySelector('div:nth-child(2)').textContent;
+                            document.querySelector('.content-title').textContent = title;
+                        });
+                    });
+                </script>
+
+                <div class="dashboard-metrics">
+                    <div class="dashboard-title">DASHBOARD</div>
+                    <div class="metric-item">
+                        <div class="metric-label">
+                            <div>Content</div>
+                            <div class="metric-value">78%</div>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill metric-fill-blue" style="width: 78%"></div>
+                        </div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">
+                            <div>Copyright</div>
+                            <div class="metric-value">65%</div>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill metric-fill-blue" style="width: 65%"></div>
+                        </div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">
+                            <div>Output</div>
+                            <div class="metric-value">92%</div>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill metric-fill-green" style="width: 92%"></div>
+                        </div>
+                    </div>
+                    <div class="metric-item">
+                        <div class="metric-label">
+                            <div>System</div>
+                            <div class="metric-value">45%</div>
+                        </div>
+                        <div class="metric-bar">
+                            <div class="metric-fill metric-fill-blue" style="width: 45%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-title">DASHBOARD</div>
+                
+
+                <!-- AI powered content models card -->
+                <div class="menu-item">
+                    <div class="menu-icon" style="background-color: var(--panel-bg);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--light-blue);">
+                            <path d="M20 11.08V8l-6-6H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2v-3.08"></path>
+                            <path d="M9 22v-6h6v6"></path>
+                            <rect x="13" y="4" width="6" height="4"></rect>
+                        </svg>
+                    </div>
+                    <div>AI powered content models</div>
+                </div>
+
+                <!-- Threat Detection section -->
+                <div class="threat-detection">
+                    <div class="threat-header">
+                        <div class="threat-title">
+                            <div class="threat-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                            </div>
+                            <div>Threat Detection</div>
+                        </div>
+                        <div class="badge badge-live">LIVE</div>
+                    </div>
+                    <div class="threat-list">
+                        <div class="threat-item">
+                            <div class="threat-info">
+                                <div class="indicator-dot dot-orange"></div>
+                                <div>Content Violation</div>
+                            </div>
+                            <div class="threat-time">5m ago</div>
+                        </div>
+                        <div class="threat-item">
+                            <div class="threat-info">
+                                <div class="indicator-dot dot-orange"></div>
+                                <div>Access Attempt</div>
+                            </div>
+                            <div class="threat-time">2m ago</div>
+                        </div>
+                        <div class="threat-item">
+                            <div class="threat-info">
+                                <div class="indicator-dot dot-orange"></div>
+                                <div>Content Violation</div>
+                            </div>
+                            <div class="threat-time">5m ago</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Cards -->
+                <div class="nav-cards">
+                    <div class="nav-card">
+                        <div class="nav-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        </div>
+                        <div class="nav-title">Content Review</div>
+                    </div>
+                    <div class="nav-card">
+                        <div class="nav-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2424" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 11.08V8l-6-6H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2v-3.08"></path>
+                                <path d="M9 22v-6h6v6"></path>
+                                <rect x="13" y="4" width="6" height="4"></rect>
+                            </svg>
+                        </div>
+                        <div class="nav-title">Reports</div>
+                    </div>
+                    <div class="nav-card">
+                        <div class="nav-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 2v8l4-4 4 4V2"></path>
+                                <path d="M4.93 10.93L8 14l-2.93 2.93A5.63 5.63 0 0 0 4 20.86V22h16v-1.14a5.63 5.63 0 0 0-1.07-3.93L16 14l3.07-3.07a5.63 5.63 0 0 0 1.07-3.93V6h-2.38a5.63 5.63 0 0 0-3.93 1.07L12 9 10.24 7.07A5.63 5.63 0 0 0 6.38 6H4v1.14c0 1.48.38 2.94 1.07 4.22"></path>
+                            </svg>
+                        </div>
+                        <div class="nav-title">Settings</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="center-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Content Moderation Dashboard</div>
+                        <div class="badge real-time">REAL-TIME</div>
+                    </div>
+                    <div class="content-filters">
+                        <div class="action-buttons">
+                            <button class="action-button action-primary" onclick="showAllContent()">All Content</button>
+                        </div>
+                        
+                        <div class="action-buttons">
+                            <button class="action-button action-primary" onclick="openImage()">Image</button>
+                        </div>
+                        
+                        <div class="action-buttons">
+                            <button class="action-button action-primary" onclick="openVideo()">Video</button>
+                        </div>
+                    </div>
+                    
+                    <script>
+                        function showAllContent() {
+                            console.log("All content button clicked");
+                            // Add your functionality for showing all content here
+                            alert("Showing all content");
+                        }
+                        
+                        function openImage() {
+                            console.log("Image button clicked");
+                            // Open the image in a new tab
+                            window.open('blur.jpg', '_blank');
+                        }
+                        
+                        function openVideo() {
+                            console.log("Video button clicked");
+                            // Open the video in a new tab
+                            window.open('video.mp4', '_blank');
+                        }
+                    </script>
+                    <!-- <div class="content-filters"> -->
+                        <!-- <div class="filter-chip active">All Content</div> -->
+                        <!-- <div class="action-buttons"> -->
+                            <!-- <button class="action-button">Images</button> -->
+                            <!-- <button class="action-button action-primary" onclick="">All Content</button> -->
+                        <!-- </div>
+                        <script> -->
+                            <!-- function openImage() {
+                                // Change 'report.pdf' to the actual path of your PDF file
+                                window.open('', '_blank');
+                            } -->
+                        <!-- </script> -->
+
+                        <!-- <div class="action-buttons"> -->
+                            
+                            <!-- <button class="action-button">Images</button> -->
+                            <!-- <button class="action-button action-primary" onclick="blur.png">Image</button>
+                        </div>
+                        <script> -->
+                            <!-- function openImage() {
+                                // Change 'report.pdf' to the actual path of your PDF file
+                                window.open('blur.jpg', '_blank');
+                            } -->
+                        <!-- </script> -->
+
+                        <!-- <div class="action-buttons"> -->
+                            <!-- <button class="action-button">vedio</button> -->
+                            <!-- <button class="action-button action-primary" onclick="openVideo('video.mp4')">Video</button> -->
+                        <!-- </div> -->
+                        <!-- <script> -->
+                            <!-- function openVideo(videoPath) { -->
+                                <!-- // Change 'videoPath' to the actual path of your video file -->
+                                <!-- window.open(video.mp4, '_blank'); -->
+                            <!-- } -->
+                        <!-- </script> -->
+                        <!-- <div class="filter-chip">Videos</div> -->
+                        <!-- <div class="filter-chip">Text</div>
+                        <div class="filter-chip">Audio</div> -->
+                    </div>
+                    
+                    <div class="monitoring-circle">
+                        <div class="circle circle-outer"></div>
+                        <div class="circle circle-middle"></div>
+                        <div class="circle circle-inner">
+                            <div>CONTENT SCAN</div>
+                        </div>
+                        <div class="circle-center"></div>
+                        
+                        <div class="circle-dot dot-1"></div>
+                        <div class="circle-dot dot-2"></div>
+                        <div class="circle-dot dot-3"></div>
+                        <div class="circle-dot dot-4"></div>
+                        <div class="circle-dot dot-5"></div>
+                        <div class="circle-dot dot-6"></div>
+                        
+                        <div class="circle-label label-top">SCANNING</div>
+                        <div class="circle-label label-bottom">PROTECTED</div>
+                    </div>
+                    
+                    <div class="resource-monitors">
+                        <div class="resource-monitor">
+                            <div>CPU Usage</div>
+                            <div class="resource-value">42%</div>
+                        </div>
+                        <div class="resource-monitor">
+                            <div>Memory</div>
+                            <div class="resource-value">3.2 GB</div>
+                        </div>
+                        <div class="resource-monitor">
+                            <div>Network</div>
+                            <div class="resource-value">1.8 Gbps</div>
+                        </div>
+                        <div class="resource-monitor">
+                            <div>Storage</div>
+                            <div class="resource-value">128 GB</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="panel-header">
+                        <div class="panel-title">Content Processing Rate</div>
+                        <div class="badge protected">PROTECTED</div>
+                    </div>
+                    
+                    <div class="y-axis-labels">
+                        <div>100%</div>
+                        <div>50%</div>
+                        <div>0%</div>
+                    </div>
+                    
+                    <div class="chart-area">
+                        <div class="chart-bar" style="height: 20%;"></div>
+                        <div class="chart-bar" style="height: 35%;"></div>
+                        <div class="chart-bar" style="height: 48%;"></div>
+                        <div class="chart-bar" style="height: 60%;"></div>
+                        <div class="chart-bar" style="height: 75%;"></div>
+                        <div class="chart-bar" style="height: 65%;"></div>
+                        <div class="chart-bar" style="height: 80%;"></div>
+                        <div class="chart-bar" style="height: 90%;"></div>
+                        <div class="chart-bar" style="height: 70%;"></div>
+                        <div class="chart-bar" style="height: 85%;"></div>
+                        <div class="chart-bar" style="height: 95%;"></div>
+                        <div class="chart-bar" style="height: 75%;"></div>
+                    </div>
+                    
+                    <div class="chart-dots">
+                        <div class="chart-dot"></div>
+                        <div class="chart-dot"></div>
+                        <div class="chart-dot"></div>
+                        <div class="chart-dot"></div>
+                    </div>
+                </div>
+                
+                <div class="moderation-stats">
+                    <div class="moderation-card">
+                        <div class="moderation-header">
+                            <div class="moderation-title">Content Violation Types</div>
+                            <div>Today</div>
+                        </div>
+                        
+                        <div class="violation-list">
+                            <div class="violation-item">
+                                <div class="violation-name">Violence</div>
+                                <div class="violation-count">12</div>
+                            </div>
+                            <div class="violation-item">
+                                <div class="violation-name">Hate Speech</div>
+                                <div class="violation-count">8</div>
+                            </div>
+                            <div class="violation-item">
+                                <div class="violation-name">Adult Content</div>
+                                <div class="violation-count">15</div>
+                            </div>
+                            <div class="violation-item">
+                                <div class="violation-name">Harassment</div>
+                                <div class="violation-count">7</div>
+                            </div>
+                            <div class="violation-item">
+                                <div class="violation-name">Misinformation</div>
+                                <div class="violation-count">21</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="moderation-card">
+                        <div class="moderation-header">
+                            <div class="moderation-title">Content Approval Rate</div>
+                            <div>Last 24 Hours</div>
+                        </div>
+                        
+                        <div class="progress-ring">
+                            <div class="ring-bg"></div>
+                            <div class="ring-progress"></div>
+                            <div class="ring-text">76%</div>
+                        </div>
+                        
+                        <div class="content-metrics" style="margin-top: 20px;">
+                            <div class="content-metric">
+                                <div class="indicator-dot dot-green"></div>
+                                <div>Approved: 1,250</div>
+                            </div>
+                            <div class="content-metric">
+                                <div class="indicator-dot dot-red"></div>
+                                <div>Rejected: 384</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="right-panel">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Security Status</div>
+                        <div class="badge real-time">REAL-TIME</div>
+                    </div>
+                    
+                    <div class="security-metrics">
+                        <div class="security-item">
+                            <div class="security-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--active-green);">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                </svg>
+                            </div>
+                            <div class="security-info">
+                                <div class="security-label">Firewall</div>
+                                <div class="security-value">
+                                    <div class="indicator-dot dot-green"></div>
+                                    <div class="active-text">Active</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="security-item">
+                            <div class="security-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--active-green);">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                </svg>
+                            </div>
+                            <div class="security-info">
+                                <div class="security-label">Access Control</div>
+                                <div class="security-value">
+                                    <div class="indicator-dot dot-green"></div>
+                                    <div class="active-text">Secured</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="security-item">
+                            <div class="security-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning-yellow);">
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                    <path d="M12 8v4"></path>
+                                    <path d="M12 16h.01"></path>
+                                </svg>
+                            </div>
+                            <div class="security-info">
+                                <div class="security-label">Threat Detection</div>
+                                <div class="security-value">
+                                    <div class="indicator-dot dot-orange"></div>
+                                    <div class="warning-text">3 Alerts</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="security-item">
+                            <div class="security-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--active-green);">
+                                    <path d="M9 12l2 2 4-4"></path>
+                                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                </svg>
+                            </div>
+                            <div class="security-info">
+                                <div class="security-label">Content Shield</div>
+                                <div class="security-value">
+                                    <div class="indicator-dot dot-green"></div>
+                                    <div class="active-text">Active</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Activity Log</div>
+                        <div>Today</div>
+                    </div>
+                    
+                    <div class="activity-log">
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">Content Flagged</div>
+                                <div class="activity-time">10:45 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Video #45782 flagged for violent content. Awaiting review.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">Content Approved</div>
+                                <div class="activity-time">10:32 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Image #89123 reviewed and approved for publication.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">System Alert</div>
+                                <div class="activity-time">10:15 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Unusual traffic detected from IP 192.168.1.45. Automatic blocking enabled.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">Content Rejected</div>
+                                <div class="activity-time">09:58 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Text post #67234 rejected for hate speech. User notified.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">AI Model Updated</div>
+                                <div class="activity-time">09:30 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Content recognition AI model updated to version 3.5.2.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">Content Quarantined</div>
+                                <div class="activity-time">09:15 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Video #12678 quarantined for review. Potential policy violation detected.
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-header">
+                                <div class="activity-type">System Backup</div>
+                                <div class="activity-time">09:00 AM</div>
+                            </div>
+                            <div class="activity-details">
+                                Scheduled system backup completed successfully.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- <div class="action-buttons">
+                        <button class="action-button">View All Logs</button>
+                        <button class="action-button action-primary">Export Report</button>
+                    </div> -->
+                    <div class="action-buttons">
+                        <button class="action-button">View All Logs</button>
+                        <button class="action-button action-primary" onclick="openPDF()">Export Report</button>
+                    </div>
+                    
+                    <script>
+                        function openPDF() {
+                            // Change 'report.pdf' to the actual path of your PDF file
+                            window.open('report.pdf', '_blank');
+                        }
+                    </script>
+                    
+                </div>
+                
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">Quick Actions</div>
+                    </div>
+                    
+                    <div class="content-filters">
+                        <div class="filter-chip">Review Queue</div>
+                        <div class="filter-chip">Moderation Settings</div>
+                        <div class="filter-chip">AI Sensitivity</div>
+                        <div class="filter-chip">Generate Report</div>
+                        <div class="filter-chip">Community Guidelines</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
